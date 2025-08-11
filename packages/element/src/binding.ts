@@ -391,10 +391,7 @@ const bindingStrategyForNewSimpleArrowEndpointDragging = (
         start: {
           mode: globalBindMode === "inside" ? "inside" : "orbit",
           element: hovered,
-          focusPoint:
-            globalBindMode === "inside"
-              ? arrowOriginalStartPoint ?? center
-              : center,
+          focusPoint: arrowOriginalStartPoint ?? center,
         },
         end: { mode: null },
       };
@@ -405,21 +402,19 @@ const bindingStrategyForNewSimpleArrowEndpointDragging = (
       const otherElement = elementsMap.get(arrow.startBinding.elementId);
       invariant(otherElement, "Other element must be in the elements map");
 
-      const center = pointFrom<GlobalPoint>(
-        otherElement.x + otherElement.width / 2,
-        otherElement.y + otherElement.height / 2,
-      );
       const otherIsInsideBinding =
         !!appState.selectedLinearElement?.pointerDownState.arrowStartIsInside;
 
       // We need to "jump" the start point out with the detached
       // focus point of the center of the bound element
+      invariant(
+        arrowOriginalStartPoint,
+        "Arrow original start point must be defined",
+      );
       const other: BindingStrategy = {
         mode: otherIsInsideBinding ? "inside" : "orbit",
         element: otherElement as ExcalidrawBindableElement,
-        focusPoint: otherIsInsideBinding
-          ? arrowOriginalStartPoint ?? center
-          : center,
+        focusPoint: arrowOriginalStartPoint,
       };
       let current: BindingStrategy;
 
@@ -429,12 +424,7 @@ const bindingStrategyForNewSimpleArrowEndpointDragging = (
         current = {
           mode: isInsideBinding ? "inside" : "orbit",
           element: hovered,
-          focusPoint: isInsideBinding
-            ? point
-            : pointFrom<GlobalPoint>(
-                hovered.x + hovered.width / 2,
-                hovered.y + hovered.height / 2,
-              ),
+          focusPoint: point,
         };
       } else {
         current = { mode: null };
