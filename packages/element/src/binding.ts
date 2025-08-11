@@ -399,7 +399,9 @@ const bindingStrategyForNewSimpleArrowEndpointDragging = (
 
     // Inside -> outside binding
     if (arrow.startBinding && arrow.startBinding.elementId !== hovered?.id) {
-      const otherElement = elementsMap.get(arrow.startBinding.elementId);
+      const otherElement = elementsMap.get(
+        arrow.startBinding.elementId,
+      ) as ExcalidrawBindableElement;
       invariant(otherElement, "Other element must be in the elements map");
 
       const otherIsInsideBinding =
@@ -413,18 +415,22 @@ const bindingStrategyForNewSimpleArrowEndpointDragging = (
       );
       const other: BindingStrategy = {
         mode: otherIsInsideBinding ? "inside" : "orbit",
-        element: otherElement as ExcalidrawBindableElement,
-        focusPoint: arrowOriginalStartPoint,
+        element: otherElement,
+        focusPoint: snapToCenter(
+          otherElement,
+          elementsMap,
+          arrowOriginalStartPoint,
+        ),
       };
-      let current: BindingStrategy;
 
       // We are hovering another element with the end point
+      let current: BindingStrategy;
       if (hovered) {
         const isInsideBinding = globalBindMode === "inside";
         current = {
           mode: isInsideBinding ? "inside" : "orbit",
           element: hovered,
-          focusPoint: point,
+          focusPoint: snapToCenter(hovered, elementsMap, point),
         };
       } else {
         current = { mode: null };
@@ -1354,7 +1360,37 @@ export const snapToCenter = (
 ) => {
   const extent = Math.min(element.width, element.height);
   const center = elementCenterPoint(element, elementsMap);
-  if (pointDistance(p, center) < extent * 0.05) {
+  const nonRotated = pointRotateRads(p, center, -element.angle as Radians);
+  if (isRectanguloidElement(element)) {
+    if (
+      Math.abs(nonRotated[0] - (element.x + element.width / 2)) >
+        element.width * 0.9 ||
+      Math.abs(nonRotated[1] - (element.y + element.height / 2)) >
+        element.height * 0.9
+    ) {
+      return pointFrom<GlobalPoint>(center[0], center[1]);
+    }
+  }
+
+  if (element.type === "diamond") {
+    const center = elementCenterPoint(element, elementsMap);
+    const nonRotated = pointRotateRads(p, center, -element.angle as Radians);
+    const cx = element.x + element.width / 2;
+    const cy = element.y + element.height / 2;
+    const scale = 0.9; // 90% sized inner diamond
+    const halfW = (element.width / 2) * scale;
+    const halfH = (element.height / 2) * scale;
+
+    if (halfW > 0 && halfH > 0) {
+      const dx = Math.abs(nonRotated[0] - cx);
+      const dy = Math.abs(nonRotated[1] - cy);
+      if (dx / halfW + dy / halfH <= 1) {
+        return pointFrom<GlobalPoint>(center[0], center[1]);
+      }
+    }
+  }
+
+  if (pointDistance(nonRotated, center) < extent * 0.5) {
     return pointFrom<GlobalPoint>(center[0], center[1]);
   }
   return p;
