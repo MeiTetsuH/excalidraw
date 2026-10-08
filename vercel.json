@@ -1,5 +1,4 @@
 {
-  "public": true,
   "headers": [
     {
       "source": "/(.*)",
@@ -19,6 +18,10 @@
         {
           "key": "Referrer-Policy",
           "value": "origin"
+        },
+        {
+          "key": "X-Robots-Tag",
+          "value": "noindex, nofollow"
         }
       ]
     },

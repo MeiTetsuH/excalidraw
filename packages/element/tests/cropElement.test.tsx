@@ -26,7 +26,11 @@ import type { NormalizedZoomValue } from "@excalidraw/excalidraw/types";
 
 import { duplicateElement } from "../src/duplicate";
 
-import type { ExcalidrawImageElement, ImageCrop } from "../src/types";
+import type {
+  ExcalidrawImageElement,
+  ImageCrop,
+  NonDeleted,
+} from "../src/types";
 
 const { h } = window;
 const mouse = new Pointer("mouse");
@@ -130,6 +134,34 @@ describe("Crop an image", () => {
     expect(image.width).toBeLessThan(initialWidth);
     UI.crop(image, "n", naturalWidth, naturalHeight, [0, initialHeight / 2]);
     expect(image.height).toBeLessThan(initialHeight);
+  });
+
+  it("Dragging a crop handle in the crop editor crops the image", () => {
+    const image = API.createElement({
+      type: "image",
+      width: 200,
+      height: 100,
+      fileId: "file",
+    });
+    API.setElements([image]);
+    // the file loaded, at twice the element's size
+    const htmlImage = new Image();
+    Object.defineProperties(htmlImage, {
+      naturalWidth: { value: 400 },
+      naturalHeight: { value: 200 },
+    });
+    h.app.imageCache.set(image.fileId!, {
+      image: htmlImage,
+      mimeType: "image/png",
+    });
+    API.setSelectedElements([image]);
+    Keyboard.keyDown(KEYS.ENTER);
+    expect(h.state.croppingElementId).toBe(image.id);
+
+    UI.resize(image, "w", [50, 0]);
+
+    expect(API.getElement(image)).toMatchObject({ x: 50, width: 150 });
+    expect(API.getElement(image).crop).toMatchObject({ x: 100, width: 300 });
   });
 
   it("Cropping has minimal sizes", async () => {
@@ -313,7 +345,7 @@ describe("Cropping and other features", async () => {
   });
 
   it("Exports should preserve crops", async () => {
-    const image = h.elements[0] as ExcalidrawImageElement;
+    const image = h.elements[0] as NonDeleted<ExcalidrawImageElement>;
     const initialWidth = image.width;
     const initialHeight = image.height;
 

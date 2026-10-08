@@ -1,3 +1,4 @@
+import clsx from "clsx";
 import React, { memo, useEffect, useState } from "react";
 
 import type { ExcalidrawElement, NonDeleted } from "@excalidraw/element/types";
@@ -10,7 +11,7 @@ import type { SvgCache } from "../hooks/useLibraryItemSvg";
 import type { LibraryItem } from "../types";
 import type { ReactNode } from "react";
 
-type LibraryOrPendingItem = (
+type LibraryOrPendingItem = readonly (
   | LibraryItem
   | /* pending library item */ {
       id: null;
@@ -26,14 +27,27 @@ interface Props {
   isItemSelected: (id: LibraryItem["id"] | null) => boolean;
   svgCache: SvgCache;
   itemsRenderedPerBatch: number;
+  /** larger items with their name below */
+  showNames?: boolean;
 }
 
 export const LibraryMenuSectionGrid = ({
   children,
+  showNames,
 }: {
   children: ReactNode;
+  /** fewer columns, for items rendered with `showNames` */
+  showNames?: boolean;
 }) => {
-  return <div className="library-menu-items-container__grid">{children}</div>;
+  return (
+    <div
+      className={clsx("library-menu-items-container__grid", {
+        "library-menu-items-container__grid--named": showNames,
+      })}
+    >
+      {children}
+    </div>
+  );
 };
 
 export const LibraryMenuSection = memo(
@@ -45,6 +59,7 @@ export const LibraryMenuSection = memo(
     onClick,
     svgCache,
     itemsRenderedPerBatch,
+    showNames,
   }: Props) => {
     const [, startTransition] = useTransition();
     const [index, setIndex] = useState(0);
@@ -67,13 +82,15 @@ export const LibraryMenuSection = memo(
               onClick={onClick}
               svgCache={svgCache}
               id={item?.id}
+              name={"name" in item ? item.name : undefined}
+              showName={showNames}
               selected={isItemSelected(item.id)}
               onToggle={onItemSelectToggle}
               onDrag={onItemDrag}
               key={item?.id ?? i}
             />
           ) : (
-            <EmptyLibraryUnit key={i} />
+            <EmptyLibraryUnit key={i} showName={showNames} />
           );
         })}
       </>

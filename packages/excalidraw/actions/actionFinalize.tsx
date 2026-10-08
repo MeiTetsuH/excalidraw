@@ -1,10 +1,6 @@
 import { pointFrom } from "@excalidraw/math";
 
-import {
-  maybeBindLinearElement,
-  bindOrUnbindLinearElement,
-  isBindingEnabled,
-} from "@excalidraw/element/binding";
+import { bindOrUnbindBindingElement } from "@excalidraw/element/binding";
 import {
   isValidPolygon,
   LinearElementEditor,
@@ -21,7 +17,8 @@ import {
 import {
   KEYS,
   arrayToMap,
-  tupleToCoors,
+  invariant,
+  shouldRotateWithDiscreteAngle,
   updateActiveTool,
 } from "@excalidraw/common";
 import { isPathALoop } from "@excalidraw/element";
@@ -35,31 +32,52 @@ import type {
   ExcalidrawElement,
   ExcalidrawLinearElement,
   NonDeleted,
+  PointsPositionUpdates,
 } from "@excalidraw/element/types";
 
 import { t } from "../i18n";
-import { resetCursor } from "../cursor";
 import { done } from "../components/icons";
-import { ToolButton } from "../components/ToolButton";
+import { TOGGLE_TOOLS } from "../components/Tools";
+import { IconButton } from "../components/IconButton";
 
 import { register } from "./register";
 
 import type { AppState } from "../types";
 
-export const actionFinalize = register({
+type FormData = {
+  event: PointerEvent;
+  sceneCoords: { x: number; y: number };
+  hitBoundText?: boolean;
+};
+
+export const actionFinalize = register<FormData>({
   name: "finalize",
   label: "",
   trackEvent: false,
   perform: (elements, appState, data, app) => {
-    const { interactiveCanvas, focusContainer, scene } = app;
-    const { event, sceneCoords } =
-      (data as {
-        event?: PointerEvent;
-        sceneCoords?: { x: number; y: number };
-      }) ?? {};
+    let shouldCommit = true;
+    let newElements = elements;
+    const { focusContainer, scene } = app;
     const elementsMap = scene.getNonDeletedElementsMap();
+    const isDrawShapeTool = appState.activeTool.type === "autoshape";
 
-    if (event && appState.selectedLinearElement) {
+    if (data && appState.selectedLinearElement) {
+      const { event, sceneCoords } = data;
+      const element = LinearElementEditor.getElement(
+        appState.selectedLinearElement.elementId,
+        elementsMap,
+      );
+
+      invariant(
+        element,
+        "Arrow element should exist if selectedLinearElement is set",
+      );
+
+      invariant(
+        sceneCoords,
+        "sceneCoords should be defined if actionFinalize is called with event",
+      );
+
       const linearElementEditor = LinearElementEditor.handlePointerUp(
         event,
         appState.selectedLinearElement,
@@ -67,19 +85,73 @@ export const actionFinalize = register({
         app.scene,
       );
 
-      const { startBindingElement, endBindingElement } = linearElementEditor;
-      const element = app.scene.getElement(linearElementEditor.elementId);
-      if (isBindingElement(element)) {
-        bindOrUnbindLinearElement(
+      if (
+        isBindingElement(element) &&
+        !appState.selectedLinearElement.segmentMidPointHoveredCoords &&
+        // a label drag along the arrow moves no endpoint, so it must not
+        // rebind either of them
+        !data.hitBoundText
+      ) {
+        const newArrow = !!appState.newElement;
+
+        const selectedPointsIndices =
+          newArrow || !appState.selectedLinearElement.selectedPointsIndices
+            ? [element.points.length - 1] // New arrow creation
+            : appState.selectedLinearElement.selectedPointsIndices;
+
+        const angleLocked = shouldRotateWithDiscreteAngle(event);
+        const effectiveGridSize = event[KEYS.CTRL_OR_CMD]
+          ? null
+          : app.getEffectiveGridSize();
+
+        const draggedPoints: PointsPositionUpdates =
+          selectedPointsIndices.reduce((map, index) => {
+            map.set(index, {
+              point: angleLocked
+                ? element.points[index]
+                : LinearElementEditor.createPointAt(
+                    element,
+                    elementsMap,
+                    sceneCoords.x - linearElementEditor.pointerOffset.x,
+                    sceneCoords.y - linearElementEditor.pointerOffset.y,
+                    effectiveGridSize,
+                  ),
+            });
+
+            return map;
+          }, new Map()) ?? new Map();
+
+        bindOrUnbindBindingElement(
           element,
-          startBindingElement,
-          endBindingElement,
-          app.scene,
+          draggedPoints,
+          sceneCoords.x,
+          sceneCoords.y,
+          scene,
+          appState,
+          {
+            newArrow,
+            altKey: event.altKey,
+            angleLocked,
+            gridSize: app.getEffectiveGridSize(),
+          },
         );
+      } else if (isLineElement(element)) {
+        if (
+          appState.selectedLinearElement?.isEditing &&
+          !appState.newElement &&
+          !isValidPolygon(element.points)
+        ) {
+          scene.mutateElement(element, {
+            polygon: false,
+          });
+        }
       }
 
       if (linearElementEditor !== appState.selectedLinearElement) {
-        let newElements = elements;
+        // `handlePointerUp()` updated the linear element instance,
+        // so filter out this element if it is too small,
+        // but do an update to all new elements anyway for undo/redo purposes.
+
         if (element && isInvisiblySmallElement(element)) {
           // TODO: #7348 in theory this gets recorded by the store, so the invisible elements could be restored by the undo/redo, which might be not what we would want
           newElements = newElements.map((el) => {
@@ -91,39 +163,8 @@ export const actionFinalize = register({
             return el;
           });
         }
-        return {
-          elements: newElements,
-          appState: {
-            selectedLinearElement: {
-              ...linearElementEditor,
-              selectedPointsIndices: null,
-            },
-            suggestedBindings: [],
-          },
-          captureUpdate: CaptureUpdateAction.IMMEDIATELY,
-        };
-      }
-    }
 
-    if (appState.selectedLinearElement?.isEditing) {
-      const { elementId, startBindingElement, endBindingElement } =
-        appState.selectedLinearElement;
-      const element = LinearElementEditor.getElement(elementId, elementsMap);
-
-      if (element) {
-        if (isBindingElement(element)) {
-          bindOrUnbindLinearElement(
-            element,
-            startBindingElement,
-            endBindingElement,
-            scene,
-          );
-        }
-        if (isLineElement(element) && !isValidPolygon(element.points)) {
-          scene.mutateElement(element, {
-            polygon: false,
-          });
-        }
+        const activeToolLocked = appState.activeTool?.locked;
 
         return {
           elements:
@@ -134,33 +175,61 @@ export const actionFinalize = register({
                   }
                   return el;
                 })
-              : undefined,
+              : newElements,
           appState: {
             ...appState,
             cursorButton: "up",
-            selectedLinearElement: new LinearElementEditor(
-              element,
-              arrayToMap(elementsMap),
-              false, // exit editing mode
-            ),
+            selectedElementIds: isDrawShapeTool
+              ? {}
+              : appState.selectedElementIds,
+            selectedLinearElement:
+              activeToolLocked || isDrawShapeTool
+                ? null
+                : {
+                    ...linearElementEditor,
+                    selectedPointsIndices: null,
+                    isEditing: false,
+                    initialState: {
+                      ...linearElementEditor.initialState,
+                      lastClickedPoint: -1,
+                    },
+                    pointerOffset: { x: 0, y: 0 },
+                  },
+            selectionElement: null,
+            suggestedBinding: null,
+            newElement: null,
+            multiElement: null,
           },
           captureUpdate: CaptureUpdateAction.IMMEDIATELY,
         };
       }
     }
 
-    let newElements = elements;
+    focusContainer();
 
-    if (window.document.activeElement instanceof HTMLElement) {
-      focusContainer();
+    // clean up pending gesture even if active tool is already not drawShape
+    const hadPendingSketch = app.drawShape.hasPendingGesture();
+    if (hadPendingSketch || isDrawShapeTool) {
+      app.drawShape.finalize();
+      if (hadPendingSketch) {
+        // finalize() inserts the recognized element via app.insertNewElement
+        // — re-read so the returned array includes it (replaceAllElements
+        // would otherwise drop it)
+        newElements = app.scene.getElementsIncludingDeleted();
+      }
     }
 
     let element: NonDeleted<ExcalidrawElement> | null = null;
     if (appState.multiElement) {
       element = appState.multiElement;
     } else if (
-      appState.newElement?.type === "freedraw" ||
-      isBindingElement(appState.newElement)
+      // the drawShape preview in `newElement` is not a scene element and the
+      // sketch was finalized by app.drawShape.finalize() above — never treat
+      // the preview as an in-progress element here
+      !isDrawShapeTool &&
+      !hadPendingSketch &&
+      (appState.newElement?.type === "freedraw" ||
+        isBindingElement(appState.newElement))
     ) {
       element = appState.newElement;
     } else if (Object.keys(appState.selectedElementIds).length === 1) {
@@ -174,15 +243,56 @@ export const actionFinalize = register({
 
     if (element) {
       // pen and mouse have hover
-      if (appState.multiElement && element.type !== "freedraw") {
-        const { points, lastCommittedPoint } = element;
+      if (
+        appState.selectedLinearElement &&
+        appState.multiElement &&
+        element.type !== "freedraw" &&
+        appState.lastPointerDownWith !== "touch"
+      ) {
+        const { points } = element;
+        const { lastCommittedPoint } = appState.selectedLinearElement;
         if (
           !lastCommittedPoint ||
           points[points.length - 1] !== lastCommittedPoint
         ) {
+          shouldCommit = false;
           scene.mutateElement(element, {
             points: element.points.slice(0, -1),
           });
+          if (
+            isBindingElement(element) &&
+            element.endBinding &&
+            // after slicing the trailing point a <2-point arrow may be left
+            element.points.length > 1
+          ) {
+            const newArrow = !!appState.newElement;
+            const draggedPoints: PointsPositionUpdates = new Map([
+              [
+                element.points.length - 1,
+                {
+                  point: element.points[element.points.length - 1],
+                  isDragging: false,
+                },
+              ],
+            ]);
+            const globalPoint =
+              LinearElementEditor.getPointAtIndexGlobalCoordinates(
+                element,
+                -1,
+                elementsMap,
+              );
+            bindOrUnbindBindingElement(
+              element,
+              draggedPoints,
+              globalPoint[0],
+              globalPoint[1],
+              scene,
+              appState,
+              {
+                newArrow,
+              },
+            );
+          }
         }
       }
 
@@ -227,95 +337,93 @@ export const actionFinalize = register({
             polygon: false,
           });
         }
-
-        if (
-          isBindingElement(element) &&
-          !isLoop &&
-          element.points.length > 1 &&
-          isBindingEnabled(appState)
-        ) {
-          const coords =
-            sceneCoords ??
-            tupleToCoors(
-              LinearElementEditor.getPointAtIndexGlobalCoordinates(
-                element,
-                -1,
-                arrayToMap(elements),
-              ),
-            );
-
-          maybeBindLinearElement(element, appState, coords, scene);
-        }
       }
     }
 
-    if (
-      (!appState.activeTool.locked &&
-        appState.activeTool.type !== "freedraw") ||
-      !element
-    ) {
-      resetCursor(interactiveCanvas);
-    }
-
     let activeTool: AppState["activeTool"];
-    if (appState.activeTool.type === "eraser") {
+    if (TOGGLE_TOOLS.includes(appState.activeTool.type)) {
       activeTool = updateActiveTool(appState, {
         ...(appState.activeTool.lastActiveTool || {
-          type: "selection",
+          type: app.state.preferredSelectionTool.type,
         }),
-        lastActiveToolBeforeEraser: null,
+        lastActiveTool: null,
       });
     } else {
       activeTool = updateActiveTool(appState, {
-        type: "selection",
+        type: app.state.preferredSelectionTool.type,
       });
     }
+
+    // locked via the tool lock or host-forced (`props.activeTool`)
+    const isToolLocked = app.isToolLocked();
+
+    // the drawShape flow finalizes without a `newElement` (the sketch is
+    // converted separately), so it stays active regardless of `element`
+    const keepActiveTool =
+      appState.activeTool.type === "autoshape" ||
+      ((isToolLocked || appState.activeTool.type === "freedraw") && !!element);
+
+    if (!keepActiveTool) {
+      // the active tool reverts (see the returned `appState.activeTool`) —
+      // apply the reverted tool's cursor
+      app.cursor.applyForTool(activeTool);
+    }
+
+    let selectedLinearElement =
+      element && isLinearElement(element)
+        ? new LinearElementEditor(element, arrayToMap(newElements)) // To select the linear element when user has finished mutipoint editing
+        : appState.selectedLinearElement;
+
+    selectedLinearElement = selectedLinearElement
+      ? {
+          ...selectedLinearElement,
+          isEditing: appState.newElement
+            ? false
+            : selectedLinearElement.isEditing,
+          initialState: {
+            ...selectedLinearElement.initialState,
+            lastClickedPoint: -1,
+            origin: null,
+          },
+        }
+      : selectedLinearElement;
 
     return {
       elements: newElements,
       appState: {
         ...appState,
         cursorButton: "up",
-        activeTool:
-          (appState.activeTool.locked ||
-            appState.activeTool.type === "freedraw") &&
-          element
-            ? appState.activeTool
-            : activeTool,
+        activeTool: keepActiveTool ? appState.activeTool : activeTool,
         activeEmbeddable: null,
         newElement: null,
         selectionElement: null,
         multiElement: null,
         editingTextElement: null,
-        startBoundElement: null,
-        suggestedBindings: [],
-        selectedElementIds:
-          element &&
-          !appState.activeTool.locked &&
-          appState.activeTool.type !== "freedraw"
-            ? {
-                ...appState.selectedElementIds,
-                [element.id]: true,
-              }
-            : appState.selectedElementIds,
-        // To select the linear element when user has finished mutipoint editing
-        selectedLinearElement:
-          element && isLinearElement(element)
-            ? new LinearElementEditor(element, arrayToMap(newElements))
-            : appState.selectedLinearElement,
+        suggestedBinding: null,
+        frameToHighlight: null,
+        selectedElementIds: isDrawShapeTool
+          ? {}
+          : element && !isToolLocked && appState.activeTool.type !== "freedraw"
+          ? {
+              ...appState.selectedElementIds,
+              [element.id]: true,
+            }
+          : appState.selectedElementIds,
+
+        selectedLinearElement: isDrawShapeTool ? null : selectedLinearElement,
       },
       // TODO: #7348 we should not capture everything, but if we don't, it leads to incosistencies -> revisit
-      captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+      captureUpdate: shouldCommit
+        ? CaptureUpdateAction.IMMEDIATELY
+        : CaptureUpdateAction.NEVER,
     };
   },
   keyTest: (event, appState) =>
-    (event.key === KEYS.ESCAPE &&
-      (appState.selectedLinearElement?.isEditing ||
-        (!appState.newElement && appState.multiElement === null))) ||
+    (event.key === KEYS.ESCAPE && appState.selectedLinearElement?.isEditing) ||
     ((event.key === KEYS.ESCAPE || event.key === KEYS.ENTER) &&
       appState.multiElement !== null),
   PanelComponent: ({ appState, updateData, data }) => (
-    <ToolButton
+    <IconButton
       type="button"
       icon={done}
       title={t("buttons.done")}

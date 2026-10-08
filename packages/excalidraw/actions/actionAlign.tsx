@@ -4,7 +4,7 @@ import { isFrameLikeElement } from "@excalidraw/element";
 
 import { updateFrameMembershipOfSelectedElements } from "@excalidraw/element";
 
-import { KEYS, arrayToMap, getShortcutKey } from "@excalidraw/common";
+import { KEYS, arrayToMap } from "@excalidraw/common";
 
 import { alignElements } from "@excalidraw/element";
 
@@ -16,7 +16,7 @@ import type { ExcalidrawElement } from "@excalidraw/element/types";
 
 import type { Alignment } from "@excalidraw/element";
 
-import { ToolButton } from "../components/ToolButton";
+import { IconButton } from "../components/IconButton";
 import {
   AlignBottomIcon,
   AlignLeftIcon,
@@ -29,6 +29,8 @@ import {
 import { t } from "../i18n";
 
 import { isSomeElementSelected } from "../scene";
+
+import { getShortcutKey } from "../shortcut";
 
 import { register } from "./register";
 
@@ -94,7 +96,7 @@ export const actionAlignTop = register({
   keyTest: (event) =>
     event[KEYS.CTRL_OR_CMD] && event.shiftKey && event.key === KEYS.ARROW_UP,
   PanelComponent: ({ elements, appState, updateData, app }) => (
-    <ToolButton
+    <IconButton
       hidden={!alignActionsPredicate(appState, app)}
       type="button"
       icon={AlignTopIcon}
@@ -128,7 +130,7 @@ export const actionAlignBottom = register({
   keyTest: (event) =>
     event[KEYS.CTRL_OR_CMD] && event.shiftKey && event.key === KEYS.ARROW_DOWN,
   PanelComponent: ({ elements, appState, updateData, app }) => (
-    <ToolButton
+    <IconButton
       hidden={!alignActionsPredicate(appState, app)}
       type="button"
       icon={AlignBottomIcon}
@@ -162,7 +164,7 @@ export const actionAlignLeft = register({
   keyTest: (event) =>
     event[KEYS.CTRL_OR_CMD] && event.shiftKey && event.key === KEYS.ARROW_LEFT,
   PanelComponent: ({ elements, appState, updateData, app }) => (
-    <ToolButton
+    <IconButton
       hidden={!alignActionsPredicate(appState, app)}
       type="button"
       icon={AlignLeftIcon}
@@ -196,7 +198,7 @@ export const actionAlignRight = register({
   keyTest: (event) =>
     event[KEYS.CTRL_OR_CMD] && event.shiftKey && event.key === KEYS.ARROW_RIGHT,
   PanelComponent: ({ elements, appState, updateData, app }) => (
-    <ToolButton
+    <IconButton
       hidden={!alignActionsPredicate(appState, app)}
       type="button"
       icon={AlignRightIcon}
@@ -228,7 +230,7 @@ export const actionAlignVerticallyCentered = register({
     };
   },
   PanelComponent: ({ elements, appState, updateData, app }) => (
-    <ToolButton
+    <IconButton
       hidden={!alignActionsPredicate(appState, app)}
       type="button"
       icon={CenterVerticallyIcon}
@@ -258,7 +260,7 @@ export const actionAlignHorizontallyCentered = register({
     };
   },
   PanelComponent: ({ elements, appState, updateData, app }) => (
-    <ToolButton
+    <IconButton
       hidden={!alignActionsPredicate(appState, app)}
       type="button"
       icon={CenterHorizontallyIcon}

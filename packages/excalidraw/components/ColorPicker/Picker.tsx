@@ -8,12 +8,13 @@ import {
   KEYS,
 } from "@excalidraw/common";
 
-import type { ExcalidrawElement } from "@excalidraw/element/types";
+import type { ExcalidrawElement, Theme } from "@excalidraw/element/types";
 
 import type { ColorPaletteCustom } from "@excalidraw/common";
 
 import { useAtom } from "../../editor-jotai";
 import { t } from "../../i18n";
+import { TopPicksTip } from "../TopPicksDnD/TopPicksTip";
 
 import { CustomColorList } from "./CustomColorList";
 import PickerColorList from "./PickerColorList";
@@ -26,10 +27,12 @@ import {
   isCustomColor,
 } from "./colorPickerUtils";
 import { colorPickerKeyNavHandler } from "./keyboardNavHandlers";
+import { useColorPickerDnD } from "./colorTopPicksDnD";
 
 import type { ColorPickerType } from "./colorPickerUtils";
 
 interface PickerProps {
+  theme: Theme;
   color: string | null;
   onChange: (color: string) => void;
   type: ColorPickerType;
@@ -37,13 +40,19 @@ interface PickerProps {
   palette: ColorPaletteCustom;
   updateData: (formData?: any) => void;
   children?: React.ReactNode;
+  showTitle?: boolean;
   onEyeDropperToggle: (force?: boolean) => void;
   onEscape: (event: React.KeyboardEvent | KeyboardEvent) => void;
+  showHotKey?: boolean;
+  excludedColors?: readonly string[];
+  /** present only while the top picks are customized */
+  onResetTopPicks?: () => void;
 }
 
 export const Picker = React.forwardRef(
   (
     {
+      theme,
       color,
       onChange,
       type,
@@ -51,11 +60,23 @@ export const Picker = React.forwardRef(
       palette,
       updateData,
       children,
+      showTitle,
       onEyeDropperToggle,
       onEscape,
+      showHotKey = true,
+      excludedColors,
+      onResetTopPicks,
     }: PickerProps,
     ref,
   ) => {
+    const title = showTitle
+      ? type === "elementStroke"
+        ? t("labels.stroke")
+        : type === "elementBackground"
+        ? t("labels.background")
+        : null
+      : null;
+
     const [customColors] = React.useState(() => {
       if (type === "canvasBackground") {
         return [];
@@ -66,6 +87,7 @@ export const Picker = React.forwardRef(
     const [activeColorPickerSection, setActiveColorPickerSection] = useAtom(
       activeColorPickerSectionAtom,
     );
+    const dnd = useColorPickerDnD();
 
     const colorObj = getColorNameAndShadeFromColor({
       color,
@@ -143,6 +165,7 @@ export const Picker = React.forwardRef(
               updateData,
               activeShade,
               onEscape,
+              excludedColors,
             });
 
             if (handled) {
@@ -154,12 +177,15 @@ export const Picker = React.forwardRef(
           // to allow focusing by clicking but not by tabbing
           tabIndex={-1}
         >
+          {title && <div className="color-picker__title">{title}</div>}
+
           {!!customColors.length && (
             <div>
               <PickerHeading>
                 {t("colorPicker.mostUsedCustomColors")}
               </PickerHeading>
               <CustomColorList
+                theme={theme}
                 colors={customColors}
                 color={color}
                 label={t("colorPicker.mostUsedCustomColors")}
@@ -171,18 +197,35 @@ export const Picker = React.forwardRef(
           <div>
             <PickerHeading>{t("colorPicker.colors")}</PickerHeading>
             <PickerColorList
+              theme={theme}
               color={color}
               palette={palette}
               onChange={onChange}
               activeShade={activeShade}
+              showHotKey={showHotKey}
+              excludedColors={excludedColors}
             />
           </div>
 
           <div>
             <PickerHeading>{t("colorPicker.shades")}</PickerHeading>
-            <ShadeList color={color} onChange={onChange} palette={palette} />
+            <ShadeList
+              theme={theme}
+              color={color}
+              onChange={onChange}
+              palette={palette}
+              showHotKey={showHotKey}
+            />
           </div>
           {children}
+          {/* dnd context is only provided when top picks are customizable */}
+          {dnd && (
+            <TopPicksTip
+              tip={t("colorPicker.topPicksTip")}
+              onReset={onResetTopPicks}
+              resetTitle={t("colorPicker.resetTopPicks")}
+            />
+          )}
         </div>
       </div>
     );

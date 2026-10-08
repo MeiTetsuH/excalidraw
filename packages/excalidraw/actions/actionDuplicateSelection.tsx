@@ -1,8 +1,8 @@
 import {
   DEFAULT_GRID_SIZE,
   KEYS,
+  MOBILE_ACTION_BUTTON_BG,
   arrayToMap,
-  getShortcutKey,
 } from "@excalidraw/common";
 
 import { getNonDeletedElements } from "@excalidraw/element";
@@ -20,11 +20,14 @@ import { duplicateElements } from "@excalidraw/element";
 
 import { CaptureUpdateAction } from "@excalidraw/element";
 
-import { ToolButton } from "../components/ToolButton";
+import { IconButton } from "../components/IconButton";
 import { DuplicateIcon } from "../components/icons";
 
 import { t } from "../i18n";
 import { isSomeElementSelected } from "../scene";
+import { getShortcutKey } from "../shortcut";
+
+import { useStylesPanelMode } from "../components/App";
 
 import { register } from "./register";
 
@@ -57,7 +60,7 @@ export const actionDuplicateSelection = register({
       }
     }
 
-    let { duplicatedElements, elementsWithDuplicates } = duplicateElements({
+    const duplication = duplicateElements({
       type: "in-place",
       elements,
       idsOfElementsToDuplicate: arrayToMap(
@@ -79,15 +82,23 @@ export const actionDuplicateSelection = register({
       },
     });
 
-    if (app.props.onDuplicate && elementsWithDuplicates) {
-      const mappedElements = app.props.onDuplicate(
-        elementsWithDuplicates,
-        elements,
-      );
-      if (mappedElements) {
-        elementsWithDuplicates = mappedElements;
+    let { duplicatedElements, elementsWithDuplicates } = duplication;
+
+    if (app.props.onDuplicate) {
+      ({ elements: elementsWithDuplicates, duplicatedElements } =
+        app.duplicate.runOnDuplicate(
+          duplication,
+          elementsWithDuplicates,
+          elements,
+        ));
+
+      // host vetoed the duplication
+      if (!duplicatedElements.length) {
+        return false;
       }
     }
+
+    app.duplicate.advanceListMarkers(duplicatedElements);
 
     return {
       elements: syncMovedIndices(
@@ -106,16 +117,27 @@ export const actionDuplicateSelection = register({
     };
   },
   keyTest: (event) => event[KEYS.CTRL_OR_CMD] && event.key === KEYS.D,
-  PanelComponent: ({ elements, appState, updateData }) => (
-    <ToolButton
-      type="button"
-      icon={DuplicateIcon}
-      title={`${t("labels.duplicateSelection")} — ${getShortcutKey(
-        "CtrlOrCmd+D",
-      )}`}
-      aria-label={t("labels.duplicateSelection")}
-      onClick={() => updateData(null)}
-      visible={isSomeElementSelected(getNonDeletedElements(elements), appState)}
-    />
-  ),
+  PanelComponent: ({ elements, appState, updateData, app }) => {
+    const isMobile = useStylesPanelMode() === "mobile";
+
+    return (
+      <IconButton
+        type="button"
+        icon={DuplicateIcon}
+        title={`${t("labels.duplicateSelection")} — ${getShortcutKey(
+          "CtrlOrCmd+D",
+        )}`}
+        aria-label={t("labels.duplicateSelection")}
+        onClick={() => updateData(null)}
+        disabled={
+          !isSomeElementSelected(getNonDeletedElements(elements), appState)
+        }
+        style={{
+          ...(isMobile && appState.openPopup !== "compactOtherProperties"
+            ? MOBILE_ACTION_BUTTON_BG
+            : {}),
+        }}
+      />
+    );
+  },
 });
