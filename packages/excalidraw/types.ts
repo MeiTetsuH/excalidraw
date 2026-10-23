@@ -52,6 +52,7 @@ import type {
   CaptureUpdateActionType,
   DurableIncrement,
   EphemeralIncrement,
+  RenderEnvironment,
   OnDuplicateData,
 } from "@excalidraw/element";
 import type { GlobalPoint } from "@excalidraw/math";
@@ -851,6 +852,30 @@ export interface ExcalidrawProps {
    * @default document
    */
   ownerDocument?: Document;
+  /**
+   * Host environment used by the renderer and export pipeline to create
+   * canvases and images. Supply a custom implementation to redirect canvas
+   * creation and image decoding to e.g. a host canvas pool, an
+   * `OffscreenCanvas`, or a non-DOM image decoder. When omitted, canvas and
+   * image creation fall back to `ownerDocument` / `ownerWindow`.
+   *
+   * The value must be referentially stable -- every render cache (element
+   * canvases, text metrics, char widths, link icons) is keyed by this
+   * object's identity, so a new identity is a full cache miss. Passing an
+   * inline object literal mints a fresh identity on every React render,
+   * which silently re-rasterizes every element on every frame; hoist it to a
+   * module constant or memoize it (e.g. `useMemo`) instead.
+   *
+   * Only `createCanvas` and `createImage` are required. `createPath` (used to
+   * fill freedraw strokes) falls back to the global `Path2D`, which every
+   * browser has -- a non-browser host without one must supply it. Pass
+   * `document` (the owner document) for SVG exports to be built in it rather
+   * than in the global `document`, and `textMetrics` to measure the editor's
+   * text with your own provider.
+   *
+   * @default { createCanvas: () => ownerDocument.createElement("canvas"), createImage: () => new ownerWindow.Image(), createPath: (d) => new ownerWindow.Path2D(d), document: ownerDocument }
+   */
+  renderEnvironment?: RenderEnvironment;
   onChange?: (
     elements: readonly OrderedExcalidrawElement[],
     appState: AppState,
@@ -1182,6 +1207,7 @@ export type AppClassProperties = {
   state: AppState;
   readonly ownerDocument: Document;
   readonly ownerWindow: Window & typeof globalThis;
+  renderEnvironment: RenderEnvironment;
   api: App["api"];
   sessionExportThemeOverride: App["sessionExportThemeOverride"];
   interactiveCanvas: HTMLCanvasElement | null;
@@ -1226,6 +1252,7 @@ export type AppClassProperties = {
   toolDrag: App["toolDrag"];
   activeResizeHandle: App["activeResizeHandle"];
   selectionTool: App["selectionTool"];
+  wrap: App["wrap"];
   modifiers: App["modifiers"];
   isToolLocked: App["isToolLocked"];
   getEffectiveGridSize: App["getEffectiveGridSize"];
@@ -1319,6 +1346,9 @@ export type PointerDownState = Readonly<{
     // by default same as PointerDownState.origin. On alt-duplication, reset
     // to current pointer position at time of duplication.
     origin: { x: number; y: number };
+    // The offset from origin (axis-locked with shift) as of the previous
+    // pointer move in the crop editor, which moves the image by the change
+    lastOffset: { x: number; y: number };
     // explicit flag for specific scenarios such as:
     // - after lasso selection until the next pointer down
     blockDragging: boolean;
@@ -1374,6 +1404,24 @@ export interface ExcalidrawImperativeAPI {
   history: {
     clear: InstanceType<typeof App>["resetHistory"];
   };
+  /**
+   * Selects elements (or their ids — one or many), adds them to or removes
+   * them from the selection, or clears it — as the editor does: an element is
+   * selected with its group (unless `deep`), a frame and its children aren't
+   * selected at the same time, and locked elements are skipped (unless
+   * `includeLocked`). Text editing and cropping end, and the link popup of a
+   * lone selected element shows. Missing and deleted elements are skipped.
+   *
+   * By default the change is recorded for undo along with the next undoable
+   * change — pass `captureUpdate` as for `updateScene()` otherwise. Like
+   * `updateScene()`, it applies on the next render: read it back through
+   * `onChange()` or `getAppState()` after that. Works in view mode too, where
+   * the selection shows without transform handles.
+   */
+  selection: Pick<
+    InstanceType<typeof App>["selection"],
+    "select" | "add" | "remove" | "clear"
+  >;
   getSceneElements: InstanceType<typeof App>["getSceneElements"];
   getAppState: () => InstanceType<typeof App>["state"];
   getFiles: () => InstanceType<typeof App>["files"];
