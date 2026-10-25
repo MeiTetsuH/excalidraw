@@ -47,6 +47,8 @@ The manifest and committed lockfile are authoritative for exact dependency resol
 | `katex` | `^0.18.2` | Retain the reviewed security/compatibility resolution for this dependency family; do not replace all parent majors with a single version. |
 | `**/@excalidraw/mermaid-to-excalidraw/nanoid` | `^5.1.11` | Retain the reviewed security/compatibility resolution for this dependency family; do not replace all parent majors with a single version. |
 | `**/engine.io-client/ws` | `^8.22.0` | Retain the reviewed security/compatibility resolution for this dependency family; do not replace all parent majors with a single version. |
+| `**/puppeteer-core/ws` | `8.22.0` | Patch the WebSocket dependency of the size-limit development tool while retaining the supported 8.x major. |
+| `**/puppeteer-core/tar-fs` | `2.1.4` | Patch archive extraction in the size-limit development tool while retaining the supported 2.x major. |
 | `**/filelist/minimatch` | `^5.1.9` | Retain the reviewed security/compatibility resolution for this dependency family; do not replace all parent majors with a single version. |
 | `@grpc/grpc-js` | `^1.14.6` | Retain the reviewed security/compatibility resolution for this dependency family; do not replace all parent majors with a single version. |
 | `**/jake/minimatch` | `^3.1.4` | Retain the reviewed security/compatibility resolution for this dependency family; do not replace all parent majors with a single version. |
@@ -59,6 +61,8 @@ For every entry above, remove or narrow it only after the parent dependency natu
 ## Known limitations at this baseline
 
 The application audit retains a moderate advisory keyed to the workspace package version 0.18.0 even though related security components were updated. The separate unmaintained dev-docs lock has additional advisories, including critical findings; it needs its own migration before use. These findings are not all dependencies of the deployed drawing application.
+
+The October 2026 dependency-graph review also identified the development-only chain `packages/excalidraw` → `@size-limit/preset-big-lib` → `estimo` → `puppeteer-core`. Its old `ws` 8.5.0 and `tar-fs` 2.1.1 selections are overridden above, covering three advisories for each package. These scoped selections do not change drawing, plugins, application routes, or the separate dev-docs lock. `extract-zip` 2.0.1 in the same tooling chain still has two advisories without a patched release; keep them visible and migrate the parent tool separately. Remove these overrides after the parent naturally resolves patched versions and its dependency resolution and application build pass.
 
 ## Future upstream sync and release
 
